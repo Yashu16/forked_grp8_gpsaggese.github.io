@@ -1,8 +1,4 @@
-"""
-Import as:
-
-import class_project.project_template.test.test_docker_all as tptdal
-"""
+"""Tests for the benchmarking data science agents Docker notebooks."""
 
 import logging
 
@@ -20,7 +16,7 @@ _LOG = logging.getLogger(__name__)
 
 class Test_docker(hdoctest.DockerTestCase):
     """
-    Run all Docker tests for `class_project/project_template`.
+    Run all Docker tests for the benchmarking data science agents project.
     """
 
     _test_file = __file__
@@ -28,10 +24,10 @@ class Test_docker(hdoctest.DockerTestCase):
     @pytest.mark.slow
     def test1(self) -> None:
         """
-        Test that `template.example.ipynb` runs without error inside Docker.
+        Test that `benchmarking_agents.example.ipynb` runs without error inside Docker.
         """
         # Prepare inputs.
-        notebook_name = "template.example.ipynb"
+        notebook_name = "benchmarking_agents.example.ipynb"
         # Run test.
         self.run_notebook(
             notebook_name, use_docker_cmd=True, generate_html=False
@@ -40,10 +36,10 @@ class Test_docker(hdoctest.DockerTestCase):
     @pytest.mark.slow
     def test2(self) -> None:
         """
-        Test that `template.API.ipynb` runs without error inside Docker.
+        Test that `benchmarking_agents.API.ipynb` runs without error inside Docker.
         """
         # Prepare inputs.
-        notebook_name = "template.API.ipynb"
+        notebook_name = "benchmarking_agents.API.ipynb"
         # Run test.
         self.run_notebook(
             notebook_name, use_docker_cmd=True, generate_html=False

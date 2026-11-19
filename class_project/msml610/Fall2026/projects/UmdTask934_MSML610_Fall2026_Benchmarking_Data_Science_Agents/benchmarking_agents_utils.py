@@ -1,5 +1,5 @@
 """
-template_utils.py
+benchmarking_agents_utils.py
 
 This file contains utility functions that support the tutorial notebooks.
 
@@ -10,7 +10,7 @@ This file contains utility functions that support the tutorial notebooks.
 
 Import as:
 
-import class_project.project_template.template_utils as utils
+import benchmarking_agents_utils as bagutil
 """
 
 import logging
