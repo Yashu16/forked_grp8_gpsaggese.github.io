@@ -4,8 +4,13 @@ Import as:
 import test.test_benchmarking_agents_utils as ttbeagut
 """
 
+import io
 import logging
-from typing import Any
+import os
+import unittest.mock as umock
+import urllib.error
+import urllib.request
+from typing import Any, Dict
 
 import pandas as pd
 
@@ -123,3 +128,251 @@ class Test_validate_scores(hunitest.TestCase):
         # Run test and check outputs.
         with self.assertRaises(AssertionError):
             bagutil.validate_scores(df)
+
+
+# #############################################################################
+# Test_slim_swe_bench
+# #############################################################################
+
+
+def _make_swe_bench_result(**overrides: Any) -> Dict[str, Any]:
+    """
+    Build one SWE-bench leaderboard result with every kept field.
+
+    :param overrides: field values that replace the defaults
+    :return: one result, as in `data/leaderboards.json`
+    """
+    result = {
+        "name": "Gemini 3 Flash",
+        "model_display": "Gemini 3 Flash",
+        "agent": "mini-SWE-agent",
+        "agent_org": "SWE-bench",
+        "model_org": "Google",
+        "date": "2026-02-13",
+        "resolved": 72.7,
+        "cost": 105.55,
+        "instance_cost": 0.21,
+        "os_model": False,
+        "os_system": True,
+        "checked": True,
+        "folder": "20260213_mini-v2_gemini-3-flash",
+    }
+    result.update(overrides)
+    return result
+
+
+class Test_slim_swe_bench(hunitest.TestCase):
+    """
+    Test `benchmarking_agents_utils.slim_swe_bench()`.
+    """
+
+    def test1(self) -> None:
+        """
+        Test that only the kept fields of each result stay.
+        """
+        # Prepare inputs.
+        result = _make_swe_bench_result(logs="s3://logs", trajs="s3://trajs")
+        data = {
+            "leaderboards": [
+                {"name": "Verified", "logo": "x.svg", "results": [result]}
+            ]
+        }
+        # Run test.
+        slim = bagutil.slim_swe_bench(data)
+        # Check outputs.
+        leaderboard = slim["leaderboards"][0]
+        self.assertEqual(sorted(leaderboard), ["name", "results"])
+        self.assertEqual(
+            sorted(leaderboard["results"][0]),
+            sorted(bagutil.SWE_BENCH_FIELDS),
+        )
+
+    def test2(self) -> None:
+        """
+        Test that a missing field stays missing, so the loader can flag it.
+        """
+        # Prepare inputs.
+        result = _make_swe_bench_result()
+        del result["cost"]
+        data = {"leaderboards": [{"name": "Lite", "results": [result]}]}
+        # Run test.
+        slim = bagutil.slim_swe_bench(data)
+        # Check outputs.
+        self.assertNotIn("cost", slim["leaderboards"][0]["results"][0])
+
+
+# #############################################################################
+# Test_parse_gaia_page
+# #############################################################################
+
+
+def _make_gaia_page(*, partial: bool = False) -> Dict[str, Any]:
+    """
+    Build one page of the Hugging Face datasets-server `rows` response.
+
+    :param partial: whether the server says the page is incomplete
+    :return: a page with 2 GAIA rows
+    """
+    rows = []
+    for idx, model in enumerate(["AgentIM", "Magentic-One"]):
+        row = {
+            "model": model,
+            "model_family": "GPT-4-turbo",
+            "system_prompt": "You are a helpful assistant.",
+            "url": "",
+            "organisation": "",
+            "score": 0.37575757575757573,
+            "score_level1": 0.5094339622641509,
+            "score_level2": 0.36046511627906974,
+            "score_level3": 0.15384615384615385,
+            "date": "2024-05-26",
+        }
+        rows.append({"row_idx": idx, "row": row, "truncated_cells": []})
+    page = {"rows": rows, "num_rows_total": 2, "partial": partial}
+    return page
+
+
+class Test_parse_gaia_page(hunitest.TestCase):
+    """
+    Test `benchmarking_agents_utils.parse_gaia_page()`.
+    """
+
+    def test1(self) -> None:
+        """
+        Test that rows lose `system_prompt` and gain `split`.
+        """
+        # Prepare inputs.
+        page = _make_gaia_page()
+        # Run test.
+        rows = bagutil.parse_gaia_page(page, split="validation")
+        # Check outputs.
+        self.assertEqual(len(rows), 2)
+        self.assertNotIn("system_prompt", rows[0])
+        self.assertEqual(rows[0]["split"], "validation")
+        self.assertEqual(rows[1]["model"], "Magentic-One")
+        self.assertAlmostEqual(rows[0]["score"], 0.37575757575757573)
+
+    def test2(self) -> None:
+        """
+        Test that a page the server marks as partial is rejected.
+        """
+        # Prepare inputs.
+        page = _make_gaia_page(partial=True)
+        # Run test and check outputs.
+        with self.assertRaises(AssertionError):
+            bagutil.parse_gaia_page(page, split="test")
+
+
+# #############################################################################
+# Test_make_provenance_entry
+# #############################################################################
+
+
+class Test_make_provenance_entry(hunitest.TestCase):
+    """
+    Test `benchmarking_agents_utils.make_provenance_entry()`.
+    """
+
+    def test1(self) -> None:
+        """
+        Test that the entry has the file's sha256 and echoes the source.
+        """
+        # Prepare inputs.
+        file_name = os.path.join(self.get_input_dir(), "sample.txt")
+        # Prepare outputs.
+        expected = {
+            "url": "https://example.com/data.json",
+            "revision": "abc123",
+            "retrieved": "2026-11-20",
+            "sha256": (
+                "ba7816bf8f01cfea414140de5dae2223"
+                "b00361a396177a9cb410ff61f20015ad"
+            ),
+        }
+        # Run test.
+        actual = bagutil.make_provenance_entry(
+            file_name,
+            url="https://example.com/data.json",
+            revision="abc123",
+            retrieved="2026-11-20",
+        )
+        # Check outputs.
+        self.assertEqual(actual, expected)
+
+
+# #############################################################################
+# Test__download_json
+# #############################################################################
+
+
+def _http_error(code: int) -> urllib.error.HTTPError:
+    """
+    Build the error `urllib` raises for an HTTP status code.
+
+    :param code: HTTP status code
+    :return: the error
+    """
+    error = urllib.error.HTTPError(
+        "https://example.com/data.json", code, "error", {}, None
+    )
+    return error
+
+
+class Test__download_json(hunitest.TestCase):
+    """
+    Test `benchmarking_agents_utils._download_json()`.
+
+    The network is replaced by a fake `urlopen`, so no request is made.
+    """
+
+    def test1(self) -> None:
+        """
+        Test that a temporary server error (502) is retried.
+        """
+        # Prepare inputs.
+        response = io.BytesIO(b'{"rows": []}')
+        side_effect = [_http_error(502), response]
+        # Run test.
+        with umock.patch.object(
+            urllib.request, "urlopen", side_effect=side_effect
+        ) as urlopen:
+            data = bagutil._download_json(
+                "https://example.com/data.json", wait_in_secs=0.0
+            )
+        # Check outputs.
+        self.assertEqual(data, {"rows": []})
+        self.assertEqual(urlopen.call_count, 2)
+
+    def test2(self) -> None:
+        """
+        Test that a client error (404) fails at once, without retrying.
+        """
+        # Prepare inputs.
+        side_effect = [_http_error(404)]
+        # Run test and check outputs.
+        with umock.patch.object(
+            urllib.request, "urlopen", side_effect=side_effect
+        ) as urlopen:
+            with self.assertRaises(urllib.error.HTTPError):
+                bagutil._download_json(
+                    "https://example.com/data.json", wait_in_secs=0.0
+                )
+        self.assertEqual(urlopen.call_count, 1)
+
+    def test3(self) -> None:
+        """
+        Test that the last error is raised once every attempt failed.
+        """
+        # Prepare inputs.
+        side_effect = [_http_error(503)] * 3
+        # Run test and check outputs.
+        with umock.patch.object(
+            urllib.request, "urlopen", side_effect=side_effect
+        ) as urlopen:
+            with self.assertRaises(urllib.error.HTTPError):
+                bagutil._download_json(
+                    "https://example.com/data.json",
+                    n_attempts=3,
+                    wait_in_secs=0.0,
+                )
+        self.assertEqual(urlopen.call_count, 3)

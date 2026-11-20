@@ -35,7 +35,7 @@ Checked on 2026-11-16:
 | Source | Access | What it gives us |
 |---|---|---|
 | SWE-bench: `SWE-bench/swe-bench.github.io` `data/leaderboards.json` (pin commit `193160a4`) | Public raw GitHub file (4 MB, about 107 KB once slimmed) | 5 leaderboards (Verified 180, Lite 84, Test 24, Multimodal 22, Multilingual 13 rows) with `model_display`, `agent`, `date`, `resolved` (%), `cost` |
-| GAIA: HF dataset `gaia-benchmark/results_public`, config `2023` (revision `18511ffd`) | Public, not gated; JSON rows via `datasets-server.huggingface.co/rows` (no `pyarrow`) | validation 96 rows, test 4,205 rows; `model`, `model_family`, `score`, `score_level1..3`, `date` |
+| GAIA: HF dataset `gaia-benchmark/results_public`, config `2023` (revision `a1f6489a` on 2026-11-20; it was `18511ffd` on 2026-11-16) | Public, not gated; JSON rows via `datasets-server.huggingface.co/rows` (no `pyarrow`), which serves only the latest revision and rate-limits (429) | validation 96 rows, test 4,226 rows (2026-11-20); about 66% have an empty `model_family`; `model`, `model_family`, `score`, `score_level1..3`, `date` |
 | MLE-bench: `openai/mle-bench` README table | Public markdown table | Low/Medium/High/All medal rate, LLM, date. **PR 2** |
 | DSBench, DataSciBench | Results only in SVG figures / papers | Entered by hand with citations. **PR 2** |
 
@@ -311,7 +311,7 @@ The download half (`_download_json`, the two fetchers, the CLI) can start right 
 **Interfaces:**
 - Consumes: `load_swe_bench`, `load_gaia`, `validate_scores`
 - Produces:
-  - `SWE_BENCH_SITE_SHA = "193160a463a435d05cf44a1fa9dc5eac832113c3"`, `GAIA_REVISION = "18511ffd12e6dd5ebbc135e2a7e325af394d6445"` (pinned; the script's `--swe_bench_sha` and `--gaia_revision` flags override them)
+  - `SWE_BENCH_SITE_SHA = "193160a463a435d05cf44a1fa9dc5eac832113c3"`, `GAIA_REVISION = "a1f6489aea6808003b35465341a3cbcb84f15c82"` (the expected revision; the GAIA dataset moves, so the saved snapshot plus its sha256 is what pins the data; the script's `--swe_bench_sha` and `--gaia_revision` flags override them)
   - `build_scores_table(raw_dir: str) -> pd.DataFrame`:
     - Reads `provenance.json` (`{file_name: {"url", "revision", "retrieved", "sha256"}}`) and `hdbg.dassert`s that each file's sha256 matches.
     - Calls the two loaders with each file's `url` and `retrieved`, concatenates the results, drops exact duplicates (logging how many), sorts by `benchmark, split, date, agent`, and calls `validate_scores`.
