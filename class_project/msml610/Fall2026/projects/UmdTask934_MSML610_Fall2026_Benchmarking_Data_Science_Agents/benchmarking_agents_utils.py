@@ -26,6 +26,7 @@ import pandas as pd
 
 import helpers.hdbg as hdbg
 import helpers.hio as hio
+import helpers.hio as hio
 
 _LOG = logging.getLogger(__name__)
 
@@ -132,6 +133,56 @@ def normalize_model_name(name: str) -> str:
     if not normalized:
         normalized = "unknown"
     return normalized
+
+
+# #############################################################################
+# SWE-bench
+# #############################################################################
+
+
+def load_swe_bench(
+    file_name: str, *, source_url: str, retrieved: str
+) -> pd.DataFrame:
+    """
+    Load slim SWE-bench leaderboard JSON into the unified scores schema.
+
+    :param file_name: path to the slim leaderboard JSON file
+    :param source_url: URL of the published leaderboard snapshot
+    :param retrieved: date the snapshot was retrieved, in `YYYY-MM-DD` format
+    :return: leaderboard results using `SCHEMA_COLUMNS`
+    """
+    payload = hio.from_json(file_name)
+    rows: List[Dict[str, Any]] = []
+    for leaderboard in payload["leaderboards"]:
+        split = leaderboard["name"].lower()
+        for result in leaderboard["results"]:
+            for key in ["resolved", "date", "agent"]:
+                hdbg.dassert(
+                    key in result,
+                    "SWE-bench result is missing required key '%s'",
+                    key,
+                )
+            model_raw = result.get("model_display") or result.get("name", "")
+            rows.append(
+                {
+                    "benchmark": "swe_bench",
+                    "split": split,
+                    "agent": result["agent"],
+                    "model_raw": model_raw,
+                    "model": normalize_model_name(model_raw),
+                    "task_type": "coding",
+                    "metric": "resolved_rate",
+                    "difficulty": "all",
+                    "score": result["resolved"] / 100,
+                    "cost_usd": result.get("cost", float("nan")),
+                    "date": result["date"],
+                    "source_url": source_url,
+                    "retrieved": retrieved,
+                }
+            )
+    df = pd.DataFrame(rows, columns=SCHEMA_COLUMNS)
+    validate_scores(df)
+    return df
 
 
 # #############################################################################

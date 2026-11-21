@@ -131,6 +131,70 @@ class Test_validate_scores(hunitest.TestCase):
 
 
 # #############################################################################
+# Test_load_swe_bench
+# #############################################################################
+
+
+class Test_load_swe_bench(hunitest.TestCase):
+    """
+    Test `benchmarking_agents_utils.load_swe_bench()`.
+    """
+
+    def test1(self) -> None:
+        """
+        Test that multiple leaderboards load with the unified schema.
+        """
+        # Prepare inputs.
+        file_name = os.path.join(self.get_input_dir(), "leaderboards.json")
+        source_url = "https://example.com/leaderboards.json"
+        retrieved = "2026-11-16"
+        # Run test.
+        df = bagutil.load_swe_bench(
+            file_name, source_url=source_url, retrieved=retrieved
+        )
+        # Check outputs.
+        self.assertEqual(list(df.columns), bagutil.SCHEMA_COLUMNS)
+        self.assertEqual(len(df), 3)
+        self.assertEqual(set(df["split"]), {"verified", "lite"})
+        self.assertEqual(set(df["source_url"]), {source_url})
+        self.assertEqual(set(df["retrieved"]), {retrieved})
+        model_raw = df.loc[df["agent"] == "OpenHands", "model_raw"].iloc[0]
+        self.assertEqual(model_raw, "OpenHands model")
+        cost = df.loc[df["agent"] == "SWE-agent", "cost_usd"].iloc[0]
+        self.assertTrue(pd.isna(cost))
+
+    def test2(self) -> None:
+        """
+        Test that a SWE-bench percentage becomes a fraction.
+        """
+        # Prepare inputs.
+        file_name = os.path.join(self.get_input_dir(), "leaderboards.json")
+        df = bagutil.load_swe_bench(
+            file_name,
+            source_url="https://example.com/leaderboards.json",
+            retrieved="2026-11-16",
+        )
+        # Check outputs.
+        actual = df.loc[df["agent"] == "mini-SWE-agent", "score"].iloc[0]
+        self.assertAlmostEqual(actual, 0.727)
+
+    def test3(self) -> None:
+        """
+        Test that a missing required field is reported by name.
+        """
+        # Prepare inputs.
+        file_name = os.path.join(self.get_input_dir(), "leaderboards.json")
+        # Run test and check outputs.
+        with self.assertRaises(AssertionError) as cm:
+            bagutil.load_swe_bench(
+                file_name,
+                source_url="https://example.com/leaderboards.json",
+                retrieved="2026-11-16",
+            )
+        self.assertIn("resolved", str(cm.exception))
+
+
+# #############################################################################
 # Test_slim_swe_bench
 # #############################################################################
 

@@ -1,0 +1,58 @@
+{
+  "leaderboards": [
+    {
+      "name": "Verified",
+      "results": [
+        {
+          "name": "Claude 3.7 Sonnet",
+          "model_display": "Claude 3.7 Sonnet",
+          "agent": "mini-SWE-agent",
+          "agent_org": "Example",
+          "model_org": "Anthropic",
+          "date": "2025-02-24",
+          "resolved": 72.7,
+          "cost": 1.25,
+          "instance_cost": 1.0,
+          "os_model": "Claude 3.7 Sonnet",
+          "os_system": "Linux",
+          "checked": true,
+          "folder": "example-1"
+        },
+        {
+          "name": "GPT-4o",
+          "model_display": "GPT-4o",
+          "agent": "SWE-agent",
+          "agent_org": "Example",
+          "model_org": "OpenAI",
+          "date": "2025-02-25",
+          "resolved": 58.2,
+          "instance_cost": 0.5,
+          "os_model": "GPT-4o",
+          "os_system": "Linux",
+          "checked": true,
+          "folder": "example-2"
+        }
+      ]
+    },
+    {
+      "name": "Lite",
+      "results": [
+        {
+          "name": "OpenHands model",
+          "model_display": "",
+          "agent": "OpenHands",
+          "agent_org": "Example",
+          "model_org": "Example",
+          "date": "2025-02-26",
+          "resolved": 25.0,
+          "cost": 0.1,
+          "instance_cost": 0.1,
+          "os_model": "OpenHands model",
+          "os_system": "Linux",
+          "checked": true,
+          "folder": "example-3"
+        }
+      ]
+    }
+  ]
+}

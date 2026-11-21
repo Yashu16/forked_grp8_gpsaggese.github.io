@@ -1,0 +1,17 @@
+{
+  "leaderboards": [
+    {
+      "name": "Verified",
+      "results": [
+        {
+          "name": "Claude 3.7 Sonnet",
+          "model_display": "Claude 3.7 Sonnet",
+          "agent": "mini-SWE-agent",
+          "date": "2025-02-24",
+          "resolved": 72.7,
+          "cost": 1.25
+        }
+      ]
+    }
+  ]
+}
