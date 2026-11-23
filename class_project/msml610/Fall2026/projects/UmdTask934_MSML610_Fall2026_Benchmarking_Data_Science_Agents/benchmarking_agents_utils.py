@@ -26,7 +26,6 @@ import pandas as pd
 
 import helpers.hdbg as hdbg
 import helpers.hio as hio
-import helpers.hio as hio
 
 _LOG = logging.getLogger(__name__)
 
@@ -182,6 +181,92 @@ def load_swe_bench(
             )
     df = pd.DataFrame(rows, columns=SCHEMA_COLUMNS)
     validate_scores(df)
+    return df
+
+
+# #############################################################################
+# GAIA
+# #############################################################################
+
+
+def load_gaia(
+    file_name: str, *, source_url: str, retrieved: str
+) -> pd.DataFrame:
+    """
+    Load a local GAIA snapshot into the unified scores schema.
+
+    Each submission yields up to four rows: `all`, `level1`, `level2`,
+    and `level3`. Scores are already fractions, so no scaling is applied.
+    Null scores are skipped; an empty `model_family` is kept as an unknown
+    model. Duplicate submissions are left for `build_scores_table()`.
+
+    :param file_name: JSON list of submissions saved by `fetch_gaia()`
+    :param source_url: source URL recorded for the snapshot
+    :param retrieved: snapshot retrieval date, as `YYYY-MM-DD`
+    :return: validated scores table with `SCHEMA_COLUMNS` in order
+    """
+    _LOG.debug("Loading GAIA snapshot '%s'", file_name)
+    data = hio.from_json(file_name)
+    hdbg.dassert_isinstance(data, list, "GAIA snapshot must be a list")
+    score_columns = {
+        "score": "all",
+        "score_level1": "level1",
+        "score_level2": "level2",
+        "score_level3": "level3",
+    }
+    required = ["split", "model", "model_family", "date"] + list(score_columns)
+    rows: List[Dict[str, Any]] = []
+    n_null = 0
+    for row_index, submission in enumerate(data):
+        # Missing fields indicate a changed snapshot format, not null scores.
+        hdbg.dassert_isinstance(submission, dict, "GAIA row must be a dict")
+        for field in required:
+            hdbg.dassert_in(
+                field,
+                submission,
+                "GAIA row %s is missing '%s'",
+                row_index,
+                field,
+            )
+        hdbg.dassert_in(
+            submission["split"], ["validation", "test"], "Invalid GAIA split"
+        )
+        model_raw = submission["model_family"]
+        model = normalize_model_name(model_raw)
+        for column, difficulty in score_columns.items():
+            score = submission[column]
+            if pd.isna(score):
+                _LOG.debug(
+                    "Skipping null GAIA score '%s' for row '%s'",
+                    column,
+                    row_index,
+                )
+                n_null += 1
+                continue
+            # Preserve the published system name separately from its base model.
+            rows.append(
+                {
+                    "benchmark": "gaia",
+                    "split": submission["split"],
+                    "agent": submission["model"],
+                    "model_raw": model_raw,
+                    "model": model,
+                    "task_type": "reasoning",
+                    "metric": "accuracy",
+                    "difficulty": difficulty,
+                    "score": score,
+                    "cost_usd": float("nan"),
+                    "date": submission["date"],
+                    "source_url": source_url,
+                    "retrieved": retrieved,
+                }
+            )
+    # Explicit columns also preserve the schema for an empty snapshot.
+    df = pd.DataFrame(rows, columns=SCHEMA_COLUMNS)
+    validate_scores(df)
+    _LOG.info(
+        "GAIA: loaded %s score rows; skipped %s null scores", len(df), n_null
+    )
     return df
 
 

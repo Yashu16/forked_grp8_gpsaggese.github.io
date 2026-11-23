@@ -195,6 +195,137 @@ class Test_load_swe_bench(hunitest.TestCase):
 
 
 # #############################################################################
+# GAIA
+# #############################################################################
+
+
+class Test_load_gaia(hunitest.TestCase):
+    """
+    Test `benchmarking_agents_utils.load_gaia()`.
+    """
+
+    def helper(self) -> pd.DataFrame:
+        """
+        Load the current test's local GAIA fixture.
+
+        :return: scores table from the fixture
+        """
+        file_name = os.path.join(self.get_input_dir(), "gaia_results.json")
+        source_url = (
+            "https://huggingface.co/datasets/gaia-benchmark/results_public"
+        )
+        retrieved = "2026-11-20"
+        df = bagutil.load_gaia(
+            file_name, source_url=source_url, retrieved=retrieved
+        )
+        return df
+
+    def test1(self) -> None:
+        """
+        Test both splits and all four difficulties, including provenance.
+        """
+        # Prepare outputs: each tuple is a published submission and its scores.
+        submissions = [
+            (
+                "validation", "Example agent A", "Claude 3.7 Sonnet",
+                "claude-3.7-sonnet", "2025-02-24", [0.4, 0.6, 0.3, 0.1],
+            ),
+            (
+                "test", "Example agent B", "GPT 4.1",
+                "gpt-4.1", "2025-04-14", [0.5, 0.7, 0.4, 0.2],
+            ),
+        ]
+        difficulties = ["all", "level1", "level2", "level3"]
+        records = []
+        for split, agent, raw, model, date, scores in submissions:
+            for difficulty, score in zip(difficulties, scores):
+                records.append(
+                    [
+                        "gaia", split, agent, raw, model, "reasoning",
+                        "accuracy", difficulty, score, float("nan"), date,
+                        "https://huggingface.co/datasets/"
+                        "gaia-benchmark/results_public",
+                        "2026-11-20",
+                    ]
+                )
+        expected = pd.DataFrame(records, columns=bagutil.SCHEMA_COLUMNS)
+        # Run test.
+        actual = self.helper()
+        # Check outputs without imposing an ordering on the loader.
+        sort_columns = ["agent", "difficulty"]
+        actual = actual.sort_values(sort_columns).reset_index(drop=True)
+        expected = expected.sort_values(sort_columns).reset_index(drop=True)
+        pd.testing.assert_frame_equal(actual, expected)
+
+    def test2(self) -> None:
+        """
+        Test that GAIA scores stay fractions with their original precision.
+        """
+        # Prepare outputs.
+        expected = 0.37575757
+        # Run test.
+        df = self.helper()
+        actual = df.loc[df["difficulty"] == "all", "score"].tolist()
+        # Check outputs.
+        self.assertEqual(actual, [expected])
+
+    def test3(self) -> None:
+        """
+        Test that an empty model family keeps all rows as "unknown".
+        """
+        # Prepare outputs.
+        expected = [["", "unknown"]] * 4
+        # Run test.
+        df = self.helper()
+        actual = df[["model_raw", "model"]].values.tolist()
+        # Check outputs.
+        self.assert_equal(str(actual), str(expected))
+
+    def test4(self) -> None:
+        """
+        Test that null scores are logged and skipped while zero is retained.
+        """
+        # Prepare inputs.
+        logger = "benchmarking_agents_utils"
+        level = "DEBUG"
+        # Prepare outputs.
+        expected = {"all": 0.4, "level1": 0.0, "level3": 0.2}
+        expected_info = "GAIA: loaded 3 score rows; skipped 5 null scores"
+        # Run test.
+        with self.assertLogs(logger, level=level) as logs:
+            df = self.helper()
+        actual = df.set_index("difficulty")["score"].to_dict()
+        # Check outputs.
+        self.assert_equal(str(actual), str(expected))
+        messages = [record.getMessage() for record in logs.records]
+        skipped = [
+            message for message in messages if "Skipping null" in message
+        ]
+        self.assertEqual(len(skipped), 5)
+        self.assert_equal(messages[-1], expected_info)
+
+    def test5(self) -> None:
+        """
+        Test that empty input returns an empty table with schema columns.
+        """
+        # Prepare outputs.
+        expected = bagutil.SCHEMA_COLUMNS
+        # Run test.
+        df = self.helper()
+        # Check outputs.
+        self.assertTrue(df.empty)
+        self.assert_equal(str(list(df.columns)), str(expected))
+
+    def test6(self) -> None:
+        """
+        Test that validation rejects percent-scale GAIA scores.
+        """
+        # Run test and check outputs.
+        with self.assertRaises(AssertionError):
+            self.helper()
+
+
+# #############################################################################
 # Test_slim_swe_bench
 # #############################################################################
 
