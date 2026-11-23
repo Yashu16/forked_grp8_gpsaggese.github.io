@@ -6,7 +6,7 @@
 #       extension: .py
 #       format_name: percent
 #       format_version: '1.3'
-#       jupytext_version: 1.19.0
+#       jupytext_version: 1.18.1
 #   kernelspec:
 #     display_name: Python 3 (ipykernel)
 #     language: python
@@ -14,126 +14,166 @@
 # ---
 
 # %% [markdown]
-# # Description
+# # Benchmark Leaderboards API Overview
 #
-# This notebook examines ...
-#
-# The name of this notebook should follow the format: `<tool>.API.ipynb` (e.g., `pycaret.API.ipynb` for exploring the pycaret API).
-#
-# References:
-# - Add description of what the notebook does.
-# - Point to references, e.g. (tool.API.md)
-# - Add citations.
-# - Keep the notebook flow clear.
-# - Comments should be imperative and have a period at the end.
-# - Your code should be well commented.
-#
-# Guide: https://github.com/causify-ai/helpers/blob/master/docs/coding/all.jupyter_notebook.how_to_guide.md
+# This notebook demonstrates the local API for combining SWE-bench and GAIA
+# leaderboard results. It uses small offline fixtures for the loaders and the
+# committed snapshots to build the complete scores table.
 
 # %% [markdown]
-# ## Imports
+# ## Imports and paths
 
 # %%
-# %load_ext autoreload
-# %autoreload 2
-
-# System libraries.
 import logging
+import os
 
-# Third-party libraries.
-# import numpy as np
-# import pandas as pd
-# import seaborn as sns
-# import matplotlib.pyplot as plt
+import pandas as pd
 
-# %%
-# # To install additional packages, use:
-# import helpers.hmodule as hmodule
-# hmodule.install_module_if_not_present(
-#     ["pycaret"],
-#     use_activate=True,
-#     use_sudo=False,
-#     venv_path="/opt/venv",
-# )
-
-# %%
-# Use this for most notebooks.
 import helpers.hdbg as hdbg
 import helpers.hnotebook as hnotebook
 
-_LOG = logging.getLogger(__name__)
+import benchmarking_agents_utils as bagutil
 
-# Initialize notebook configuration and logging.
+_LOG = logging.getLogger(__name__)
 hdbg.init_logger(verbosity=logging.INFO)
 hnotebook.config_notebook()
 
-# Convert `display` into `print()`.
 try:
     from IPython.display import display
 except ImportError:
     display = print  # type: ignore
 
-# %% [markdown]
-# ## Make the notebook flow clear
-# Each notebook needs to follow a clear and logical flow, e.g:
-# - Load data
-# - Compute stats
-# - Clean data
-# - Compute stats
-# - Do analysis
-# - Show results
+project_dir = os.getcwd()
+fixture_dir = os.path.join(project_dir, "test", "outcomes")
 
+# %% [markdown]
+# ## Unified score schema
+#
+# Scores use a long-format table: each row represents a submission and one
+# difficulty level. Both loaders return these columns in the same order.
 
 # %%
-class Template:
-    """
-    Brief imperative description of what the class does in one line, if needed.
-    """
-
-    def __init__(self) -> None:
-        """
-        Initialize the Template class.
-        """
-        pass
-
-    def method1(self, arg1: int) -> None:
-        """
-        Brief imperative description of what the method does in one line.
-
-        You can elaborate more in the method docstring in this section, for e.g. explaining
-        the formula/algorithm. Every method/function should have a docstring, typehints and include the
-        parameters and return as follows:
-
-        :param arg1: description of arg1
-        :return: description of return
-        """
-        # Code blocks go here.
-        # Make sure to include comments to explain what the code is doing.
-        # No empty lines between code blocks.
-        pass
-
-
-def template_function(arg1: int) -> None:
-    """
-    Brief imperative description of what the function does in one line.
-
-    You can elaborate more in the function docstring in this section, for e.g. explaining
-    the formula/algorithm. Every function should have a docstring, typehints and include the
-    parameters and return as follows:
-
-    :param arg1: description of arg1
-    :return: description of return
-    """
-    # Code blocks go here.
-    # Make sure to include comments to explain what the code is doing.
-    # No empty lines between code blocks.
-    pass
-
+schema_descriptions = [
+    "Benchmark identifier.",
+    "Published benchmark split or leaderboard.",
+    "Submitted agent or system.",
+    "Model name as published by the source.",
+    "Normalized model identifier.",
+    "Type of task the benchmark measures.",
+    "Score metric.",
+    "Difficulty level for the score.",
+    "Score as a fraction from zero to one.",
+    "Submission cost in US dollars, when available.",
+    "Date associated with the leaderboard result.",
+    "URL identifying the data source.",
+    "Date the source snapshot was retrieved.",
+]
+schema = pd.DataFrame(
+    {"column": bagutil.SCHEMA_COLUMNS, "description": schema_descriptions}
+)
+display(schema)
 
 # %% [markdown]
-# ## The flow should be highlighted using headings in markdown
-# ```
-# # Level 1
-# ## Level 2
-# ### Level 3
-# ```
+# ## Normalize model names
+#
+# Normalized names are lowercase identifiers that make exact name matching
+# easier across benchmarks. A later project milestone adds curated aliases.
+
+# %%
+model_names = ["Claude 3.7 Sonnet", "  "]
+normalized_names = [
+    bagutil.normalize_model_name(name) for name in model_names
+]
+display(
+    pd.DataFrame(
+        {"model_raw": model_names, "model": normalized_names}
+    )
+)
+
+# %% [markdown]
+# ## Load SWE-bench results
+#
+# The loader reads local JSON, converts the published resolved percentage to
+# a fraction, and validates the resulting unified table.
+
+# %%
+swe_bench_file = os.path.join(
+    fixture_dir,
+    "Test_load_swe_bench.test1",
+    "input",
+    "leaderboards.json",
+)
+swe_bench_url = "https://example.com/leaderboards.json"
+retrieved = "2026-11-20"
+swe_bench_scores = bagutil.load_swe_bench(
+    swe_bench_file,
+    source_url=swe_bench_url,
+    retrieved=retrieved,
+)
+display(
+    swe_bench_scores[
+        ["split", "agent", "model_raw", "model", "score", "cost_usd"]
+    ]
+)
+
+# %% [markdown]
+# ## Load GAIA results
+#
+# GAIA publishes a score for the full benchmark and for three levels. Its
+# scores are already fractions, so the loader preserves their values.
+
+# %%
+gaia_file = os.path.join(
+    fixture_dir,
+    "Test_load_gaia.test1",
+    "input",
+    "gaia_results.json",
+)
+gaia_url = (
+    "https://huggingface.co/datasets/gaia-benchmark/results_public"
+)
+gaia_scores = bagutil.load_gaia(
+    gaia_file,
+    source_url=gaia_url,
+    retrieved=retrieved,
+)
+display(
+    gaia_scores[
+        ["split", "agent", "model_raw", "model", "difficulty", "score"]
+    ]
+)
+
+# %% [markdown]
+# ## Validate score data
+#
+# A percentage accidentally stored as a fraction violates the score range.
+# Catch the expected assertion to show how validation reports invalid data.
+
+# %%
+invalid_scores = swe_bench_scores.head(1).copy()
+invalid_scores.loc[invalid_scores.index[0], "score"] = 72.7
+try:
+    bagutil.validate_scores(invalid_scores)
+except AssertionError as error:
+    print(f"Expected validation error: {error}")
+else:
+    raise AssertionError("Expected the percent-scale score to be rejected.")
+
+# %% [markdown]
+# ## Build the committed scores table
+#
+# `build_scores_table` verifies each raw snapshot against its SHA-256 entry in
+# `provenance.json`, loads both benchmarks, removes exact duplicates, sorts
+# the rows, and validates the combined table. It reads local files only.
+
+# %%
+raw_dir = os.path.join(project_dir, "data", "raw")
+scores = bagutil.build_scores_table(raw_dir)
+display(pd.DataFrame({"rows": [len(scores)], "columns": [len(scores.columns)]}))
+display(
+    scores.groupby(["benchmark", "split"], sort=True)
+    .size()
+    .rename("rows")
+    .reset_index()
+)
+display(scores.head())
