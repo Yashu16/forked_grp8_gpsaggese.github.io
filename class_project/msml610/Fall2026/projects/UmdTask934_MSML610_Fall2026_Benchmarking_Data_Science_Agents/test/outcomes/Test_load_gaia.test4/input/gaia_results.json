@@ -1,0 +1,26 @@
+[
+  {
+    "split": "validation",
+    "model": "Example agent A",
+    "model_family": "Claude 3.7 Sonnet",
+    "url": "https://example.com/agent-a",
+    "organisation": "Example team A",
+    "score": 0.4,
+    "score_level1": 0.0,
+    "score_level2": null,
+    "score_level3": 0.2,
+    "date": "2025-02-24"
+  },
+  {
+    "split": "test",
+    "model": "Example agent B",
+    "model_family": "GPT 4.1",
+    "url": "https://example.com/agent-b",
+    "organisation": "Example team B",
+    "score": null,
+    "score_level1": null,
+    "score_level2": null,
+    "score_level3": null,
+    "date": "2025-04-14"
+  }
+]

@@ -1,0 +1,14 @@
+[
+  {
+    "split": "validation",
+    "model": "Example agent A",
+    "model_family": "",
+    "url": "https://example.com/agent-a",
+    "organisation": "Example team A",
+    "score": 0.4,
+    "score_level1": 0.6,
+    "score_level2": 0.3,
+    "score_level3": 0.1,
+    "date": "2025-02-24"
+  }
+]
