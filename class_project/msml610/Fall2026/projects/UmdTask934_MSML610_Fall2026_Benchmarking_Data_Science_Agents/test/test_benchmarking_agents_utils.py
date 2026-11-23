@@ -10,8 +10,9 @@ import os
 import unittest.mock as umock
 import urllib.error
 import urllib.request
-from typing import Any, Dict
+from typing import Any, Dict, List
 
+import matplotlib.pyplot as plt
 import pandas as pd
 
 import helpers.hunit_test as hunitest
@@ -687,3 +688,95 @@ class Test__to_json_gz(hunitest.TestCase):
         with open(file_name1, "rb") as file1, open(file_name2, "rb") as file2:
             self.assertEqual(file1.read(), file2.read())
         self.assertEqual(bagutil._from_json(file_name1), obj)
+
+
+# #############################################################################
+# Plots
+# #############################################################################
+
+
+class Test_plot_best_score_over_time(hunitest.TestCase):
+    """
+    Test `benchmarking_agents_utils.plot_best_score_over_time()`.
+    """
+
+    def helper(
+        self, df: pd.DataFrame, dates: List[str], scores: List[float]
+    ) -> None:
+        """
+        Check the plotted series and preservation of the input table.
+
+        :param df: unified scores table
+        :param dates: expected dates, in ascending order
+        :param scores: expected cumulative best scores
+        """
+        benchmark = "swe_bench"
+        split = "verified"
+        original = df.copy(deep=True)
+        # Run test.
+        ax = bagutil.plot_best_score_over_time(
+            df, benchmark=benchmark, split=split
+        )
+        self.addCleanup(plt.close, ax.figure)
+        # Check the single line, including chronology and same-date aggregation.
+        self.assertEqual(len(ax.lines), 1)
+        line = ax.lines[0]
+        actual_dates = pd.to_datetime(line.get_xdata()).strftime("%Y-%m-%d")
+        self.assert_equal(str(list(actual_dates)), str(dates))
+        self.assert_equal(str(line.get_ydata().tolist()), str(scores))
+        pd.testing.assert_frame_equal(df, original)
+
+    def test1(self) -> None:
+        """
+        Test that a later lower score does not decrease the best score.
+        """
+        # Prepare inputs.
+        dates = ["2024-01-01", "2024-06-01", "2025-01-01"]
+        scores = [0.2, 0.1, 0.5]
+        df = pd.concat(
+            [
+                _make_row(date=date, score=score)
+                for date, score in zip(dates, scores)
+            ],
+            ignore_index=True,
+        )
+        # Prepare outputs.
+        expected = [0.2, 0.2, 0.5]
+        # Run test and check outputs.
+        self.helper(df, dates, expected)
+
+    def test2(self) -> None:
+        """
+        Test date sorting, daily maxima, and benchmark/split/level selection.
+        """
+        # Prepare inputs.
+        df = pd.concat(
+            [
+                _make_row(date="2025-01-01", score=0.6),
+                _make_row(date="2024-01-01", score=0.3),
+                _make_row(date="2024-01-01", score=0.4),
+                _make_row(benchmark="gaia", score=0.99),
+                _make_row(split="lite", score=0.99),
+                _make_row(difficulty="level1", score=0.99),
+            ],
+            ignore_index=True,
+        )
+        # Prepare outputs.
+        dates = ["2024-01-01", "2025-01-01"]
+        scores = [0.4, 0.6]
+        # Run test and check outputs.
+        self.helper(df, dates, scores)
+
+    def test3(self) -> None:
+        """
+        Test that an absent benchmark/split gives a clear error.
+        """
+        # Prepare inputs.
+        df = _make_row()
+        benchmark = "gaia"
+        split = "test"
+        # Run test and check outputs.
+        with self.assertRaises(AssertionError):
+            bagutil.plot_best_score_over_time(
+                df, benchmark=benchmark, split=split
+            )

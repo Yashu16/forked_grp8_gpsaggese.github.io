@@ -25,10 +25,14 @@ import urllib.error
 import urllib.request
 from typing import Any, Dict, List
 
+import matplotlib.axes as maxes
+import matplotlib.dates as mdates
+import matplotlib.pyplot as plt
 import pandas as pd
 
 import helpers.hdbg as hdbg
 import helpers.hio as hio
+import helpers.hnotebook as hnotebo
 
 _LOG = logging.getLogger(__name__)
 
@@ -656,3 +660,77 @@ def fetch_gaia(dst_dir: str, *, revision: str) -> Dict[str, str]:
         file_name, url=url, revision=served, retrieved=_today()
     )
     return entry
+
+
+# #############################################################################
+# Plots
+# #############################################################################
+
+
+def init_loggers(notebook_log: logging.Logger) -> None:
+    """
+    Connect the notebook and shared utility loggers.
+
+    :param notebook_log: logger owned by the notebook
+    """
+    hnotebo.init_loggers(notebook_log, utils_log=_LOG)
+
+
+def plot_best_score_over_time(
+    df: pd.DataFrame, *, benchmark: str, split: str
+) -> maxes.Axes:
+    """
+    Plot the cumulative best overall score by submission date.
+
+    Select only `difficulty="all"` so that GAIA levels are not mixed with
+    overall scores. Aggregate submissions on the same date by their maximum,
+    sort dates, and take the cumulative maximum. For example, daily scores
+    `[0.2, 0.1, 0.5]` produce `[0.2, 0.2, 0.5]`. The input is not modified.
+
+    :param df: unified scores table
+    :param benchmark: benchmark identifier, e.g., `swe_bench`
+    :param split: split identifier, e.g., `verified`
+    :return: axes containing one cumulative-best score line
+    """
+    _LOG.debug("Plotting benchmark '%s', split '%s'", benchmark, split)
+    validate_scores(df)
+    mask = (
+        (df["benchmark"] == benchmark)
+        & (df["split"] == split)
+        & (df["difficulty"] == "all")
+    )
+    selected = df.loc[mask, ["date", "score"]].copy()
+    hdbg.dassert_lt(
+        0,
+        len(selected),
+        "No overall scores for benchmark '%s', split '%s'",
+        benchmark,
+        split,
+    )
+    # A single maximum per date makes the curve independent of row ordering.
+    selected["date"] = pd.to_datetime(selected["date"], format=_DATE_FORMAT)
+    selected["score"] = pd.to_numeric(selected["score"])
+    daily_best = selected.groupby("date", sort=True)["score"].max()
+    best_so_far = daily_best.cummax()
+    # Steps change only when a dated submission improves the published best.
+    _, ax = plt.subplots()
+    ax.plot(
+        best_so_far.index,
+        best_so_far.to_numpy(),
+        drawstyle="steps-post",
+        linewidth=2,
+        label="Best overall score to date",
+    )
+    label = {"swe_bench": "SWE-bench", "gaia": "GAIA"}[benchmark]
+    ax.set_title(f"{label} {split.title()}: best published score")
+    ax.set_xlabel("Submission date")
+    ax.set_ylabel("Score (fraction)")
+    ax.set_ylim(0, 1)
+    locator = mdates.AutoDateLocator()
+    ax.xaxis.set_major_locator(locator)
+    ax.xaxis.set_major_formatter(mdates.ConciseDateFormatter(locator))
+    ax.grid(True, alpha=0.3)
+    ax.legend(loc="lower right")
+    ax.figure.tight_layout()
+    _LOG.debug("Plotted '%s' submission dates", len(best_so_far))
+    return ax
