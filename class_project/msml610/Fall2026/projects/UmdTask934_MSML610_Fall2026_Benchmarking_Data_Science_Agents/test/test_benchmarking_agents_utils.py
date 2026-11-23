@@ -571,3 +571,119 @@ class Test__download_json(hunitest.TestCase):
                     wait_in_secs=0.0,
                 )
         self.assertEqual(urlopen.call_count, 3)
+
+
+# #############################################################################
+# Test_build_scores_table
+# #############################################################################
+
+
+class Test_build_scores_table(hunitest.TestCase):
+    """
+    Test `benchmarking_agents_utils.build_scores_table()`.
+
+    Each fixture is a mini `raw/` dir with 3 SWE-bench results, GAIA rows and
+    `provenance.json`.
+    """
+
+    def test1(self) -> None:
+        """
+        Test that both benchmarks load, with the source of each file.
+        """
+        # Prepare inputs.
+        raw_dir = os.path.join(self.get_input_dir(), "raw")
+        # Run test.
+        df = bagutil.build_scores_table(raw_dir)
+        # Check outputs.
+        # 3 SWE-bench rows, plus 4 rows for each of the 2 GAIA submissions.
+        self.assertEqual(len(df), 11)
+        self.assertEqual(set(df["benchmark"]), {"swe_bench", "gaia"})
+        source_urls = df.groupby("benchmark")["source_url"].unique()
+        self.assertEqual(
+            list(source_urls["swe_bench"]),
+            ["https://example.com/swe_bench_leaderboards.json"],
+        )
+        self.assertEqual(
+            list(source_urls["gaia"]),
+            ["https://example.com/gaia_results.json.gz"],
+        )
+        self.assertEqual(list(df.index), list(range(11)))
+
+    def test2(self) -> None:
+        """
+        Test that an exact duplicate GAIA submission is dropped.
+        """
+        # Prepare inputs.
+        raw_dir = os.path.join(self.get_input_dir(), "raw")
+        # Run test.
+        df = bagutil.build_scores_table(raw_dir)
+        # Check outputs.
+        self.assertEqual(len(df), 11)
+        self.assertFalse(df.duplicated().any())
+
+    def test3(self) -> None:
+        """
+        Test that a snapshot whose sha256 doesn't match is rejected.
+        """
+        # Prepare inputs.
+        raw_dir = os.path.join(self.get_input_dir(), "raw")
+        # Run test and check outputs.
+        with self.assertRaises(AssertionError) as cm:
+            bagutil.build_scores_table(raw_dir)
+        self.assertIn("sha256", str(cm.exception))
+        self.assertIn("gaia_results.json", str(cm.exception))
+
+
+# #############################################################################
+# Test__from_json
+# #############################################################################
+
+
+class Test__from_json(hunitest.TestCase):
+    """
+    Test `benchmarking_agents_utils._from_json()`.
+    """
+
+    def test1(self) -> None:
+        """
+        Test that a gzipped and a plain JSON file give the same object.
+        """
+        # Prepare inputs.
+        input_dir = self.get_input_dir()
+        # Prepare outputs.
+        expected = [{"model": "AgentIM", "score": 0.5}]
+        # Run test.
+        plain = bagutil._from_json(os.path.join(input_dir, "rows.json"))
+        gzipped = bagutil._from_json(os.path.join(input_dir, "rows.json.gz"))
+        # Check outputs.
+        self.assertEqual(plain, expected)
+        self.assertEqual(gzipped, expected)
+
+
+# #############################################################################
+# Test__to_json_gz
+# #############################################################################
+
+
+class Test__to_json_gz(hunitest.TestCase):
+    """
+    Test `benchmarking_agents_utils._to_json_gz()`.
+    """
+
+    def test1(self) -> None:
+        """
+        Test that the same object always gives the same bytes, so its sha256
+        in `provenance.json` is stable.
+        """
+        # Prepare inputs.
+        scratch_dir = self.get_scratch_space()
+        obj = [{"model": "AgentIM", "score": 0.5}]
+        file_name1 = os.path.join(scratch_dir, "rows1.json.gz")
+        file_name2 = os.path.join(scratch_dir, "rows2.json.gz")
+        # Run test.
+        bagutil._to_json_gz(file_name1, obj)
+        bagutil._to_json_gz(file_name2, obj)
+        # Check outputs.
+        with open(file_name1, "rb") as file1, open(file_name2, "rb") as file2:
+            self.assertEqual(file1.read(), file2.read())
+        self.assertEqual(bagutil._from_json(file_name1), obj)

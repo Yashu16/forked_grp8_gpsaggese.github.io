@@ -1,0 +1,14 @@
+{
+    "swe_bench_leaderboards.json": {
+        "url": "https://raw.githubusercontent.com/SWE-bench/swe-bench.github.io/193160a463a435d05cf44a1fa9dc5eac832113c3/data/leaderboards.json",
+        "revision": "193160a463a435d05cf44a1fa9dc5eac832113c3",
+        "retrieved": "2026-11-23",
+        "sha256": "e320034bb97f13166ac4fad18798a5ff26f415a4322be38e33fc596b1116e560"
+    },
+    "gaia_results.json.gz": {
+        "url": "https://huggingface.co/datasets/gaia-benchmark/results_public/tree/4b950a33b8d76784ea3dc2e660c7823a0fde03c0/2023",
+        "revision": "4b950a33b8d76784ea3dc2e660c7823a0fde03c0",
+        "retrieved": "2026-11-23",
+        "sha256": "1eef9ad9bd7c7efe4254a2467a3271a97fb1f96cb4677c162f7a57a9121b548d"
+    }
+}

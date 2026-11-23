@@ -4,6 +4,8 @@ Helper functions for the Benchmarking Data Science Agents project.
 Used by the 2 notebooks and by `fetch_leaderboards.py`:
 - The unified scores table: its columns and the checks every row must pass
 - Model name normalization
+- Loaders that turn each leaderboard snapshot into rows of the table
+- Building the table from the snapshots
 - Downloading the leaderboard snapshots and recording where they came from
 
 Import as:
@@ -12,6 +14,7 @@ import benchmarking_agents_utils as bagutil
 """
 
 import datetime
+import gzip
 import hashlib
 import json
 import logging
@@ -206,7 +209,7 @@ def load_gaia(
     :return: validated scores table with `SCHEMA_COLUMNS` in order
     """
     _LOG.debug("Loading GAIA snapshot '%s'", file_name)
-    data = hio.from_json(file_name)
+    data = _from_json(file_name)
     hdbg.dassert_isinstance(data, list, "GAIA snapshot must be a list")
     score_columns = {
         "score": "all",
@@ -271,6 +274,108 @@ def load_gaia(
 
 
 # #############################################################################
+# Table build
+# #############################################################################
+
+
+def _from_json(file_name: str) -> Any:
+    """
+    Read a JSON file, gzipped if its name ends in `.gz`.
+
+    :param file_name: path of the file
+    :return: the parsed JSON
+    """
+    if file_name.endswith(".gz"):
+        with gzip.open(file_name, "rt", encoding="utf-8") as file:
+            data = json.load(file)
+    else:
+        with open(file_name, encoding="utf-8") as file:
+            data = json.load(file)
+    return data
+
+
+def _to_json_gz(file_name: str, obj: Any) -> None:
+    """
+    Write an object as gzipped JSON, with the same bytes for the same object.
+
+    The gzip header normally holds the write time. It's set to 0 so that the
+    sha256 in `provenance.json` only changes when the data changes.
+
+    :param file_name: path of the file to write, ending in `.json.gz`
+    :param obj: object to write
+    """
+    hdbg.dassert(file_name.endswith(".json.gz"), "Bad name '%s'", file_name)
+    hio.create_dir(os.path.dirname(file_name), incremental=True)
+    txt = json.dumps(obj, indent=4)
+    with open(file_name, "wb") as file:
+        with gzip.GzipFile(
+            filename="", mode="wb", fileobj=file, compresslevel=9, mtime=0
+        ) as gz_file:
+            gz_file.write(txt.encode("utf-8"))
+
+
+def _file_sha256(file_name: str) -> str:
+    """
+    Return the sha256 of a file's bytes, as a hex string.
+
+    :param file_name: path of the file
+    :return: sha256 hex digest
+    """
+    with open(file_name, "rb") as file:
+        sha256 = hashlib.sha256(file.read()).hexdigest()
+    return sha256
+
+
+def build_scores_table(raw_dir: str) -> pd.DataFrame:
+    """
+    Build the unified scores table from the raw snapshots in a directory.
+
+    The function:
+    - checks that each snapshot's sha256 matches `provenance.json`, so a file
+      edited after the download is caught
+    - loads each snapshot, stamping its rows with the file's URL and download
+      date
+    - drops exact duplicate rows, sorts the rows and validates the table
+
+    :param raw_dir: directory with `SWE_BENCH_FILE`, `GAIA_FILE` and
+        `PROVENANCE_FILE`
+    :return: scores table with `SCHEMA_COLUMNS`
+    """
+    loaders = {SWE_BENCH_FILE: load_swe_bench, GAIA_FILE: load_gaia}
+    provenance = hio.from_json(os.path.join(raw_dir, PROVENANCE_FILE))
+    hdbg.dassert_eq(sorted(provenance), sorted(loaders))
+    dfs = []
+    for file_name, loader in loaders.items():
+        entry = provenance[file_name]
+        path = os.path.join(raw_dir, file_name)
+        sha256 = _file_sha256(path)
+        hdbg.dassert_eq(
+            sha256,
+            entry["sha256"],
+            "The sha256 of '%s' doesn't match '%s': the file changed after "
+            "the download",
+            file_name,
+            PROVENANCE_FILE,
+        )
+        df = loader(path, source_url=entry["url"], retrieved=entry["retrieved"])
+        dfs.append(df)
+    df = pd.concat(dfs, ignore_index=True)
+    # Drop exact duplicates only: distinct submissions of a model all stay.
+    n_rows = len(df)
+    df = df.drop_duplicates()
+    _LOG.info("Dropped %s exact duplicate rows", n_rows - len(df))
+    df = df.sort_values(["benchmark", "split", "date", "agent"], kind="stable")
+    df = df.reset_index(drop=True)
+    validate_scores(df)
+    _LOG.info(
+        "Scores table: %s rows (%s)",
+        len(df),
+        df["benchmark"].value_counts().to_dict(),
+    )
+    return df
+
+
+# #############################################################################
 # Fetch
 # #############################################################################
 
@@ -281,12 +386,15 @@ SWE_BENCH_SITE_SHA = "193160a463a435d05cf44a1fa9dc5eac832113c3"
 # Revision of the Hugging Face dataset `gaia-benchmark/results_public` that we
 # expect. The datasets-server only serves the latest revision, so
 # `fetch_gaia()` records the revision it actually got.
-GAIA_REVISION = "a1f6489aea6808003b35465341a3cbcb84f15c82"
+GAIA_REVISION = "4b950a33b8d76784ea3dc2e660c7823a0fde03c0"
 
 # Names of the raw snapshot files.
 SWE_BENCH_FILE = "swe_bench_leaderboards.json"
-GAIA_FILE = "gaia_results.json"
+# The GAIA snapshot and the scores table are gzipped to stay under the repo's
+# 500 KB limit per file.
+GAIA_FILE = "gaia_results.json.gz"
 PROVENANCE_FILE = "provenance.json"
+SCORES_FILE = "scores.csv.gz"
 
 # Fields kept for each SWE-bench result. The others (logs, trajectories,
 # per-task details) are large and not needed.
@@ -450,13 +558,11 @@ def make_provenance_entry(
     :param retrieved: download date, as `YYYY-MM-DD`
     :return: dict with `url`, `revision`, `retrieved` and `sha256`
     """
-    with open(file_name, "rb") as file:
-        sha256 = hashlib.sha256(file.read()).hexdigest()
     entry = {
         "url": url,
         "revision": revision,
         "retrieved": retrieved,
-        "sha256": sha256,
+        "sha256": _file_sha256(file_name),
     }
     return entry
 
@@ -542,7 +648,7 @@ def fetch_gaia(dst_dir: str, *, revision: str) -> Dict[str, str]:
         "The GAIA dataset changed during the download: run it again",
     )
     file_name = os.path.join(dst_dir, GAIA_FILE)
-    hio.to_json(file_name, rows)
+    _to_json_gz(file_name, rows)
     url = _GAIA_SOURCE_URL.format(
         dataset=_GAIA_DATASET, revision=served, config=_GAIA_CONFIG
     )

@@ -1,0 +1,14 @@
+{
+    "swe_bench_leaderboards.json": {
+        "url": "https://example.com/swe_bench_leaderboards.json",
+        "revision": "abc123",
+        "retrieved": "2026-11-23",
+        "sha256": "77d6cf01ab254ceba764d8e592eddf49d2a0658128e8d2d16a8c292f41186ac7"
+    },
+    "gaia_results.json.gz": {
+        "url": "https://example.com/gaia_results.json.gz",
+        "revision": "abc123",
+        "retrieved": "2026-11-23",
+        "sha256": "0000000000000000000000000000000000000000000000000000000000000000"
+    }
+}

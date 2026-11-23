@@ -11,7 +11,7 @@ unit tests, a cleaned-up Docker skeleton, and thin notebooks that show the table
 **Architecture:** Follows the design of the sibling project UmdTask716 (Skill vs Luck), which is already merged.
 - One CLI script (`fetch_leaderboards.py`) is the only code that touches the network. It saves
   slim raw snapshots plus `provenance.json` (URL, pinned revision, retrieval date, sha256) under
-  `data/raw/`, then builds `data/scores.csv`.
+  `data/raw/`, then builds `data/scores.csv.gz`.
 - All parsing lives in `benchmarking_agents_utils.py` as pure functions over local files, so the
   tests and notebooks run offline.
 - The table is in **long format**: one row per (submission, difficulty).
@@ -59,7 +59,7 @@ history shows all three contributing.
 
 | Person | Tasks | In short |
 |---|---|---|
-| **Rahul** | Task 2, Task 5, Task 7 | Schema and checks; download script, table build and `data/scores.csv`; opening the PR |
+| **Rahul** | Task 2, Task 5, Task 7 | Schema and checks; download script, table build and `data/scores.csv.gz`; opening the PR |
 | **Yaswanth** | Task 1, Task 3, Task 6a | Skeleton and Docker; SWE-bench loader; API notebook |
 | **Aksshaj** | Task 4, Task 6b | GAIA loader; `plot_best_score_over_time`, example notebook and `README.md` |
 
@@ -68,8 +68,8 @@ history shows all three contributing.
 1. **Day 1:** Yaswanth does Task 1 (renames the files everyone edits). Rahul writes Task 2 in parallel and rebases it onto Task 1 once that lands (about half a day).
 2. **After Task 2 is merged:** Yaswanth (Task 3) and Aksshaj (Task 4) build their loaders in parallel. Both use only `SCHEMA_COLUMNS`, `normalize_model_name` and `validate_scores`, and their signatures are fixed below, so neither waits on the other.
 3. **Meanwhile:** Rahul builds the download half of Task 5 (`_download_json`, `fetch_swe_bench`, `fetch_gaia`, the CLI). It doesn't depend on the loaders.
-4. **After Tasks 3 and 4 are merged:** Rahul finishes Task 5 (`build_scores_table`, its tests, the real fetch, `data/scores.csv`).
-5. **Notebooks:** Yaswanth (6a) and Aksshaj (6b) can draft early on the Task 3/4 fixtures, then finish once `data/scores.csv` exists.
+4. **After Tasks 3 and 4 are merged:** Rahul finishes Task 5 (`build_scores_table`, its tests, the real fetch, `data/scores.csv.gz`).
+5. **Notebooks:** Yaswanth (6a) and Aksshaj (6b) can draft early on the Task 3/4 fixtures, then finish once `data/scores.csv.gz` exists.
 6. **Last:** Rahul opens the PR (Task 7) once every task's tests pass on the team branch.
 
 **Branching workflow** (all three people edit `benchmarking_agents_utils.py` and
@@ -95,12 +95,13 @@ history shows all three contributing.
   - Fixtures under `self.get_input_dir()`; no `/tmp`; **no network in any test**
 - The CLI script follows `script.rules.md` (`_parse()` / `_main(parser)`, `hparser.add_verbosity_arg`).
 - Notebooks are thin (all logic in `benchmarking_agents_utils.py`), paired with jupytext percent `.py` files.
-- **Every row of `data/scores.csv` has a non-empty `source_url` and `retrieved` date.**
+- **Every row of `data/scores.csv.gz` has a non-empty `source_url` and `retrieved` date.**
   Scores are fractions in `[0, 1]`. Dates are ISO `YYYY-MM-DD`.
 - Files only under `class_project/msml610/Fall2026/projects/UmdTask934_MSML610_Fall2026_Benchmarking_Data_Science_Agents/`.
   Stage only that folder; never `git add -A`.
 - Commit messages are `UmdTask934: <Imperative description>`, with no co-author trailers. Each
   task's owner commits and pushes their own branch to remote `grp8`.
+- Every committed file stays under the repo's 500 KB limit (`check-added-large-files --maxkb=500` in `.pre-commit-config.yaml`). The GAIA snapshot and the scores table are therefore gzipped, with a fixed gzip time so the same data gives the same bytes. Read the table with `pd.read_csv("data/scores.csv.gz")`.
 - `requirements.txt` changes are pinned (`pkg==x.y.z`), matching UmdTask716's practice.
 
 Paths below are relative to the project folder, `$P` =
@@ -130,15 +131,15 @@ file explicitly; `class_project/msml610/conftest.py` blocks directory collection
 | File | Responsibility |
 |---|---|
 | `benchmarking_agents_utils.py` | Schema, validation, the per-benchmark loaders, table build, plus download helpers used only by the script |
-| `fetch_leaderboards.py` | CLI: download the raw snapshots, write `provenance.json`, build `data/scores.csv` (the only networked code) |
+| `fetch_leaderboards.py` | CLI: download the raw snapshots, write `provenance.json`, build `data/scores.csv.gz` (the only networked code) |
 | `data/raw/swe_bench_leaderboards.json` | Slim SWE-bench snapshot (fields listed in Task 3) |
-| `data/raw/gaia_results.json` | GAIA rows for both splits, with `system_prompt` dropped |
+| `data/raw/gaia_results.json.gz` | GAIA rows for both splits, with `system_prompt` dropped |
 | `data/raw/provenance.json` | Per raw file: `url`, `revision`, `retrieved`, `sha256` |
-| `data/scores.csv` | The unified table (the PR 1 artifact) |
+| `data/scores.csv.gz` | The unified table (the PR 1 artifact) |
 | `test/test_benchmarking_agents_utils.py` | Unit tests, offline |
 | `test/outcomes/<Class.method>/input/*.json` | Small hand-written fixtures |
 | `benchmarking_agents.API.ipynb` / `.py` | Schema and loaders walkthrough on the fixtures |
-| `benchmarking_agents.example.ipynb` / `.py` | First look at `data/scores.csv` |
+| `benchmarking_agents.example.ipynb` / `.py` | First look at `data/scores.csv.gz` |
 | `README.md` | Quick start, data provenance, how to refresh the data, link to the spec and #934 |
 
 The owner of each file section is listed in "Who does what" above.
@@ -306,7 +307,7 @@ The download half (`_download_json`, the two fetchers, the CLI) can start right 
 - Modify: `benchmarking_agents_utils.py`, `test/test_benchmarking_agents_utils.py`
 - Create: `fetch_leaderboards.py` (executable, `#!/usr/bin/env python`)
 - Create: `test/outcomes/Test_build_scores_table.test{1,2,3}/input/` (a mini `raw/` dir: both slim files plus `provenance.json`)
-- Create (by running the script): `data/raw/swe_bench_leaderboards.json`, `data/raw/gaia_results.json`, `data/raw/provenance.json`, `data/scores.csv`
+- Create (by running the script): `data/raw/swe_bench_leaderboards.json`, `data/raw/gaia_results.json.gz`, `data/raw/provenance.json`, `data/scores.csv.gz`
 
 **Interfaces:**
 - Consumes: `load_swe_bench`, `load_gaia`, `validate_scores`
@@ -324,7 +325,7 @@ The download half (`_download_json`, the two fetchers, the CLI) can start right 
     `gaia_results.json`, and returns its provenance entry. It warns if the HF API's current `sha`
     differs from `revision`, because datasets-server serves only the latest version.
   - `_download_json(url: str) -> Any` (stdlib `urllib.request` with a 60 s timeout).
-  - CLI: `fetch_leaderboards.py --dst_dir data [--swe_bench_sha ...] [--gaia_revision ...]` writes `data/raw/*` plus `data/scores.csv`.
+  - CLI: `fetch_leaderboards.py --dst_dir data [--swe_bench_sha ...] [--gaia_revision ...]` writes `data/raw/*` plus `data/scores.csv.gz`. `--no_download` rebuilds the table from the snapshots already in `data/raw/`, offline.
 
 - [ ] **Step 1: Write the failing tests** (offline; the fetchers aren't unit-tested because they only do I/O)
 
@@ -366,7 +367,7 @@ class Test_build_scores_table(hunitest.TestCase):
 **Files:**
 - Modify: `benchmarking_agents_utils.py`: add `plot_best_score_over_time(df: pd.DataFrame, *, benchmark: str, split: str) -> matplotlib.axes.Axes` (cumulative max of `score` by `date`) so the notebook stays thin.
 - Modify: `test/test_benchmarking_agents_utils.py`
-- Modify: `benchmarking_agents.example.ipynb` / `.py`: load `data/scores.csv` and show:
+- Modify: `benchmarking_agents.example.ipynb` / `.py`: load `data/scores.csv.gz` and show:
   - row counts per `benchmark × split`
   - the top 10 of SWE-bench Verified by `score`
   - GAIA test mean score by `difficulty`
@@ -376,7 +377,7 @@ class Test_build_scores_table(hunitest.TestCase):
 - Test: `test/test_docker_template.py` runs both notebooks in Docker (`@pytest.mark.slow`, inherited from the template)
 
 **Interfaces:**
-- Consumes: `SCHEMA_COLUMNS` (Task 2); `data/scores.csv` (Task 5)
+- Consumes: `SCHEMA_COLUMNS` (Task 2); `data/scores.csv.gz` (Task 5)
 - Produces: `plot_best_score_over_time` (above)
 
 - [ ] **Step 1:** Add `Test_plot_best_score_over_time.test1`: on a 3-row frame with dates `2024-01-01`, `2024-06-01` and `2025-01-01` and scores `0.2`, `0.1`, `0.5`, the plotted y-values are `[0.2, 0.2, 0.5]`. Run it; expect FAIL.

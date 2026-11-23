@@ -1,0 +1,37 @@
+{
+    "leaderboards": [
+        {
+            "name": "Verified",
+            "results": [
+                {
+                    "name": "Claude 3.7 Sonnet",
+                    "model_display": "Claude 3.7 Sonnet",
+                    "agent": "mini-SWE-agent",
+                    "date": "2025-02-24",
+                    "resolved": 62.4,
+                    "cost": 120.5
+                },
+                {
+                    "name": "Gemini 2.5 Pro",
+                    "model_display": "Gemini 2.5 Pro",
+                    "agent": "OpenHands",
+                    "date": "2025-05-06",
+                    "resolved": 46.8,
+                    "cost": null
+                }
+            ]
+        },
+        {
+            "name": "Lite",
+            "results": [
+                {
+                    "name": "GPT-4o",
+                    "model_display": "GPT-4o",
+                    "agent": "SWE-agent",
+                    "date": "2024-07-28",
+                    "resolved": 18.3
+                }
+            ]
+        }
+    ]
+}
